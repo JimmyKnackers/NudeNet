@@ -22,7 +22,10 @@ logger = logging.getLogger()
 try:
     detector = NudeDetector()
     logger.info("NudeDetector initialized successfully")
-    image_path = r"C:\Users\Jimmy\Desktop\265138.jpg"
+
+    # Test single image
+    image_path = r"C:\Users\Jimmy\Desktop\618PROERVaL._AC_UF894,1000_QL80_.jpg"
+    # image_path = r"C:\Users\Jimmy\Desktop\265138.jpg"
     if not os.path.exists(image_path):
         logger.error(f"Image not found: {image_path}")
         exit(1)
@@ -35,9 +38,13 @@ try:
     detections = detector.detect(image_path)
     logger.info(f"Detections for {image_path}: {detections}")
     print("Detections:", detections)
-    batch_detections = detector.detect_batch([image_path], batch_size=1)
+
+    # Test batch (single or multiple images)
+    batch_paths = [image_path]  # Add more paths if needed, e.g., [image_path, "path/to/another.jpg"]
+    batch_detections = detector.detect_batch(batch_paths, batch_size=1)
     logger.info(f"Batch detections: {batch_detections}")
     print("Batch detections:", batch_detections)
+
 except Exception as e:
     logger.error(f"Error: {e}")
     raise
