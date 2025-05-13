@@ -464,7 +464,7 @@ def main(test_mode=False):
 
         # Process videos
         video_dir = r"C:\Users\Jimmy\Documents\TestFolder"
-        video_extensions = ('.mp4', '.avi', '.mkv', '.mov')
+        video_extensions = ('.mp4', '.avi', '.mkv', '.mov', '.webm', '.mpg', '.mpeg', '.wmv')
 
         if test_mode:
             # Test mode: Compare 320n.onnx and 640m.onnx on one video
