@@ -1,11 +1,9 @@
+# detector.py
 import os
-import _io
-import math
+import logging
 import cv2
 import numpy as np
 import onnxruntime
-import logging
-from onnxruntime.capi import _pybind_state as C
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,7 +17,9 @@ __labels = [
     "BUTTOCKS_COVERED",
 ]
 
+
 def _read_image(image_path, target_size=640):
+    """Preprocess an image for inference."""
     logger.info(f"Reading image: {image_path}")
     if isinstance(image_path, str):
         mat = cv2.imread(image_path)
@@ -27,10 +27,8 @@ def _read_image(image_path, target_size=640):
         mat = image_path
     elif isinstance(image_path, bytes):
         mat = cv2.imdecode(np.frombuffer(image_path, np.uint8), -1)
-    elif isinstance(image_path, _io.BufferedReader):
-        mat = cv2.imdecode(np.frombuffer(image_path.read(), np.uint8), -1)
     else:
-        raise ValueError("Image_path must be str, np.ndarray, bytes, or BufferedReader")
+        raise ValueError("Image_path must be str, np.ndarray, or bytes")
 
     if mat is None:
         raise ValueError(f"Failed to load image: {image_path}")
@@ -58,10 +56,12 @@ def _read_image(image_path, target_size=640):
         input_blob, x_ratio, y_ratio, x_pad, y_pad, image_original_width, image_original_height,
     )
 
+
 def _postprocess(
-    output, x_pad, y_pad, x_ratio, y_ratio, image_original_width, image_original_height,
-    model_width, model_height,
+        output, x_pad, y_pad, x_ratio, y_ratio, image_original_width, image_original_height,
+        model_width, model_height,
 ):
+    """Postprocess model output to detections."""
     logger.info(f"Postprocessing output shape: {output[0].shape}")
     outputs = np.transpose(np.squeeze(output[0]))
     rows = outputs.shape[0]
@@ -110,17 +110,19 @@ def _postprocess(
     logger.info(f"Final detections: {detections}")
     return detections
 
+
 class NudeDetector:
-    def __init__(self, model_path=None, providers=None, inference_resolution=640):
+    def __init__(self, model_path=None, inference_resolution=640):
         default_model_path = os.path.join(os.path.dirname(__file__), "640m.onnx")
         model_path = model_path or default_model_path
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
         logger.info(f"Loading ONNX model from: {model_path}")
-        self.onnx_session = onnxruntime.InferenceSession(
-            model_path, providers=C.get_available_providers() if not providers else providers,
-        )
-        logger.info(f"Available providers: {C.get_available_providers()}")
+
+        # Use default providers (CPU or GPU if available)
+        self.onnx_session = onnxruntime.InferenceSession(model_path)
+        logger.info(f"Available providers: {onnxruntime.get_available_providers()}")
+
         model_inputs = self.onnx_session.get_inputs()
         self.input_width = inference_resolution
         self.input_height = inference_resolution
@@ -143,7 +145,7 @@ class NudeDetector:
         logger.info(f"Processing batch of {len(image_paths)} images")
         all_detections = []
         for i in range(0, len(image_paths), batch_size):
-            batch = image_paths[i : i + batch_size]
+            batch = image_paths[i: i + batch_size]
             batch_inputs = []
             batch_metadata = []
             for image_path in batch:
@@ -165,7 +167,7 @@ class NudeDetector:
                     image_original_width, image_original_height,
                 ) = metadata
                 detections = _postprocess(
-                    [outputs[0][j : j + 1]], x_pad, y_pad, x_ratio, y_ratio,
+                    [outputs[0][j: j + 1]], x_pad, y_pad, x_ratio, y_ratio,
                     image_original_width, image_original_height,
                     self.input_width, self.input_height,
                 )

@@ -1,1 +1,1 @@
-from .nudenet import NudeDetector
+from .video_processor import NudeDetector
