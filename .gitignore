@@ -105,3 +105,4 @@ venv.bak/
 .mypy_cache/
 /detected_frames
 processing_log.txt
+/Screenshots

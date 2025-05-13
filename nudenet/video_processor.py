@@ -1,4 +1,3 @@
-# video_processor.py
 import os
 import sys
 import logging
@@ -11,6 +10,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 import shutil
+import multiprocessing
+from functools import partial
 
 # Add nudenet directory to Python path
 sys.path.insert(0, r"C:\Users\Jimmy\Documents\GitHub\NudeNet\nudenet")
@@ -41,20 +42,22 @@ NSFW_CATEGORIES = [
 # Color map for category-specific bounding boxes
 COLOR_MAP = {
     "FEMALE_GENITALIA_COVERED": (0, 255, 0),  # Green
-    "BUTTOCKS_EXPOSED": (255, 0, 0),          # Red
-    "FEMALE_BREAST_EXPOSED": (0, 0, 255),     # Blue
-    "FEMALE_GENITALIA_EXPOSED": (255, 255, 0),# Cyan
-    "ANUS_EXPOSED": (255, 0, 255),            # Magenta
+    "BUTTOCKS_EXPOSED": (255, 0, 0),  # Red
+    "FEMALE_BREAST_EXPOSED": (0, 0, 255),  # Blue
+    "FEMALE_GENITALIA_EXPOSED": (255, 255, 0),  # Cyan
+    "ANUS_EXPOSED": (255, 0, 255),  # Magenta
     "MALE_GENITALIA_EXPOSED": (0, 255, 255),  # Yellow
-    "ANUS_COVERED": (128, 128, 128)           # Gray
+    "ANUS_COVERED": (128, 128, 128)  # Gray
 }
 
 # Output directory for visualized frames
 output_dir = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\detected_frames"
 os.makedirs(output_dir, exist_ok=True)
 
+
 class ScreenshotExtractor:
-    def __init__(self, video_dir, output_dir, properties_file, video_name, min_free_space_mb=5000, max_screenshots=None, crop_to_box=False, check_processed=True):
+    def __init__(self, video_dir, output_dir, properties_file, video_name, min_free_space_mb=5000, max_screenshots=None,
+                 crop_to_box=False, check_processed=True):
         self.video_name = re.sub(r'[^a-zA-Z0-9_]', '_', video_name)
         self.video_dir = video_dir
         self.output_dir = output_dir
@@ -67,7 +70,8 @@ class ScreenshotExtractor:
 
         os.makedirs(self.output_dir, exist_ok=True)
         self.video_extensions = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.mpeg', '.mpg'}
-        self.logger.info(f"Initialized ScreenshotExtractor for video_name={self.video_name}, crop_to_box={self.crop_to_box}")
+        self.logger.info(
+            f"Initialized ScreenshotExtractor for video_name={self.video_name}, crop_to_box={self.crop_to_box}")
 
         if not os.path.exists(self.properties_file):
             self.logger.error(f"Properties file not found: {self.properties_file}")
@@ -149,7 +153,8 @@ class ScreenshotExtractor:
             self.logger.error(f"Failed to retrieve records from table {table_name}: {e}")
             return []
 
-    def capture_screenshot(self, video_path, timestamp, filename, class_name, score, box, classifier_unsafe_score, classifier_safe_score):
+    def capture_screenshot(self, video_path, timestamp, filename, class_name, score, box, classifier_unsafe_score,
+                           classifier_safe_score):
         try:
             cap = cv2.VideoCapture(video_path)
             if not cap.isOpened():
@@ -176,7 +181,7 @@ class ScreenshotExtractor:
 
             if self.crop_to_box and box:
                 x, y, w, h = box
-                frame = frame[y:y+h, x:x+w]
+                frame = frame[y:y + h, x:x + w]
                 if frame.size == 0:
                     self.logger.warning(f"Empty crop for box {box} in {video_path}")
                     cap.release()
@@ -239,6 +244,7 @@ class ScreenshotExtractor:
             self.logger.error(f"Failed to check disk space: {e}")
             return float('inf')
 
+
 def visualize_detections(frame, detections, output_path):
     """Draw bounding boxes for all detected categories."""
     for detection in detections:
@@ -250,7 +256,9 @@ def visualize_detections(frame, detections, output_path):
     cv2.imwrite(output_path, frame)
     logger.info(f"Saved visualized frame: {output_path}")
 
-def process_video(video_path, detector, conn, cursor, extractor, frame_skip=10, min_score=0.5, model_label="640m", max_frames=None):
+
+def process_video(video_path, detector, conn, cursor, extractor, frame_skip=10, min_score=0.5, model_label="640m",
+                  max_frames=None):
     """Process a single video with NudeDetector."""
     video_name = os.path.basename(video_path).rsplit('.', 1)[0]
     logger.info(f"Processing video: {video_name} with model {model_label}")
@@ -258,7 +266,8 @@ def process_video(video_path, detector, conn, cursor, extractor, frame_skip=10, 
     # Check disk space
     free_space_mb = extractor.check_disk_space()
     if free_space_mb < extractor.min_free_space_mb:
-        logger.error(f"Insufficient disk space: {free_space_mb:.2f} MB available, {extractor.min_free_space_mb} MB required")
+        logger.error(
+            f"Insufficient disk space: {free_space_mb:.2f} MB available, {extractor.min_free_space_mb} MB required")
         return 0
 
     # Create movie-specific folder for detection screenshots
@@ -310,11 +319,12 @@ def process_video(video_path, detector, conn, cursor, extractor, frame_skip=10, 
             logger.error(f"Failed to process batch: {e}")
             continue
         batch_end = time.time()
-        logger.info(f"Processed batch of {len(batch_paths)} frames in {batch_end - batch_start:.3f} seconds with {model_label}")
+        logger.info(
+            f"Processed batch of {len(batch_paths)} frames in {batch_end - batch_start:.3f} seconds with {model_label}")
 
         # Process detections
         for frame, detections, frame_path, frame_number, timestamp in zip(
-            batch_frames, batch_detections, batch_paths, batch_numbers, batch_timestamps
+                batch_frames, batch_detections, batch_paths, batch_numbers, batch_timestamps
         ):
             filename = os.path.basename(frame_path)
             nsfw_detections = [d for d in detections if d['class'] in NSFW_CATEGORIES and d['score'] >= min_score]
@@ -401,22 +411,84 @@ def process_video(video_path, detector, conn, cursor, extractor, frame_skip=10, 
         logger.error(f"Failed to update video_processing for {video_name}_{model_label}: {e}")
 
     end_time = time.time()
-    logger.info(f"Total processing time for {video_name} with {model_label}: {end_time - start_time:.3f} seconds, {detection_count} detections")
+    logger.info(
+        f"Total processing time for {video_name} with {model_label}: {end_time - start_time:.3f} seconds, {detection_count} detections")
     return detection_count
 
-def main(test_mode=False):
+def process_single_video(video_file, video_dir, detector_model_path, extractor_params, video_extensions, frame_skip=10,
+                         min_score=0.5, model_label="640m", max_frames=None):
+    """Process a single video in a separate process."""
+    video_path = os.path.join(video_dir, video_file)
+    video_name = video_file.rsplit('.', 1)[0]
+
+    process_logger = logging.getLogger(f"{__name__}.{video_name}")
+    process_logger.info(f"Starting process for video: {video_name}")
+
     try:
+        # Validate file readability
+        try:
+            with open(video_path, 'rb') as f:
+                f.read(1)
+        except Exception as e:
+            process_logger.error(f"Cannot read video file {video_path}: {e}")
+            # Log error in database
+            video_name_db = f"{video_name}_640m"
+            conn = mysql.connector.connect(
+                host='localhost',
+                port=3306,
+                database=extractor_params['db_name'],
+                user=extractor_params['db_user'],
+                password=extractor_params['db_password']
+            )
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO video_processing (video_name, processed, error_message)
+                VALUES (%s, 0, %s)
+                ON DUPLICATE KEY UPDATE error_message = %s, processed = 0
+            """, (video_name_db, str(e), str(e)))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return video_name, False
+
+        # Test video file with OpenCV
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            error_msg = f"OpenCV cannot open video file {video_path}"
+            process_logger.error(error_msg)
+            # Log error in database
+            video_name_db = f"{video_name}_640m"
+            conn = mysql.connector.connect(
+                host='localhost',
+                port=3306,
+                database=extractor_params['db_name'],
+                user=extractor_params['db_user'],
+                password=extractor_params['db_password']
+            )
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO video_processing (video_name, processed, error_message)
+                VALUES (%s, 0, %s)
+                ON DUPLICATE KEY UPDATE error_message = %s, processed = 0
+            """, (video_name_db, error_msg, error_msg))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            cap.release()
+            return video_name, False
+        cap.release()
+
         # Initialize ScreenshotExtractor
         extractor = ScreenshotExtractor(
-            video_dir=r"C:\Users\Jimmy\Documents\TestFolder",
-            output_dir=r"C:\Users\Jimmy\Documents\GitHub\NudeNet\Screenshots",
-            properties_file=r"C:\Users\Jimmy\Documents\Integration.Properties",
-            video_name="placeholder",
-            crop_to_box=False,
-            check_processed=False
+            video_dir=video_dir,
+            output_dir=extractor_params['output_dir'],
+            properties_file=extractor_params['properties_file'],
+            video_name=video_name,
+            crop_to_box=extractor_params['crop_to_box'],
+            check_processed=extractor_params['check_processed']
         )
 
-        # Connect to MySQL
+        # Create database connection
         db_user, db_password, db_name = extractor.read_properties_file()
         conn = mysql.connector.connect(
             host='localhost',
@@ -426,7 +498,97 @@ def main(test_mode=False):
             password=db_password
         )
         cursor = conn.cursor()
-        logger.info("Connected to MySQL database")
+        process_logger.info(f"Process for {video_name} connected to MySQL database")
+
+        # Initialize NudeDetector
+        detector = NudeDetector(model_path=detector_model_path)
+
+        # Process the video
+        detection_count = process_video(
+            video_path=video_path,
+            detector=detector,
+            conn=conn,
+            cursor=cursor,
+            extractor=extractor,
+            frame_skip=frame_skip,
+            min_score=min_score,
+            model_label=model_label,
+            max_frames=max_frames
+        )
+        process_logger.info(f"Completed processing {video_name} with {detection_count} detections")
+
+        # Log completion to processed_videos.txt
+        processed_file = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\processed_videos.txt"
+        with open(processed_file, "a") as f:
+            f.write(f"{video_name}\n")
+
+        # Update video_processing to mark as processed
+        video_name_db = f"{video_name}_640m"
+        cursor.execute("""
+            INSERT INTO video_processing (video_name, processed, error_message)
+            VALUES (%s, 1, NULL)
+            ON DUPLICATE KEY UPDATE processed = 1, error_message = NULL
+        """, (video_name_db,))
+        conn.commit()
+
+    except Exception as e:
+        process_logger.error(f"Error processing {video_name}: {e}")
+        # Log error in database
+        video_name_db = f"{video_name}_640m"
+        cursor.execute("""
+            INSERT INTO video_processing (video_name, processed, error_message)
+            VALUES (%s, 0, %s)
+            ON DUPLICATE KEY UPDATE error_message = %s, processed = 0
+        """, (video_name_db, str(e), str(e)))
+        conn.commit()
+        return video_name, False
+    finally:
+        temp_dir = os.path.join(extractor_params['output_dir'], video_name)
+        try:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+                process_logger.info(f"Deleted temporary frames for {video_name} in {temp_dir}")
+            os.makedirs(temp_dir, exist_ok=True)
+        except Exception as e:
+            process_logger.error(f"Failed to clean up temporary frames for {video_name}: {e}")
+
+        if 'conn' in locals() and conn.is_connected():
+            cursor.close()
+            conn.close()
+            process_logger.info(f"Database connection closed for {video_name}")
+
+    return video_name, True
+
+def main(test_mode=False):
+    try:
+        # Initialize ScreenshotExtractor parameters
+        extractor_params = {
+            'video_dir': r"E:\Prol",
+            'output_dir': r"C:\Users\Jimmy\Documents\GitHub\NudeNet\Screenshots",
+            'properties_file': r"C:\Users\Jimmy\Documents\Integration.Properties",
+            'crop_to_box': False,
+            'check_processed': True
+        }
+
+        # Connect to MySQL
+        extractor = ScreenshotExtractor(
+            video_dir=extractor_params['video_dir'],
+            output_dir=extractor_params['output_dir'],
+            properties_file=extractor_params['properties_file'],
+            video_name="placeholder",
+            crop_to_box=extractor_params['crop_to_box'],
+            check_processed=extractor_params['check_processed']
+        )
+        db_user, db_password, db_name = extractor.read_properties_file()
+        conn = mysql.connector.connect(
+            host='localhost',
+            port=3306,
+            database=db_name,
+            user=db_user,
+            password=db_password
+        )
+        cursor = conn.cursor()
+        logger.info("Main process connected to MySQL database")
 
         # Create tables
         cursor.execute("""
@@ -457,18 +619,19 @@ def main(test_mode=False):
         CREATE TABLE IF NOT EXISTS video_processing (
             video_name VARCHAR(255) PRIMARY KEY,
             processed TINYINT DEFAULT 0,
+            error_message TEXT DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
         conn.commit()
 
         # Process videos
-        video_dir = r"C:\Users\Jimmy\Documents\TestFolder"
+        video_dir = extractor_params['video_dir']
         video_extensions = ('.mp4', '.avi', '.mkv', '.mov', '.webm', '.mpg', '.mpeg', '.wmv')
+        detector_model_path = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\nudenet\640m.onnx"
 
         if test_mode:
-            # Test mode: Compare 320n.onnx and 640m.onnx on one video
-            video_file = "Delinquent School Girls (1975).mkv"  # Change to your test video
+            video_file = "Delinquent School Girls (1975).mkv"
             video_path = os.path.join(video_dir, video_file)
             if not os.path.exists(video_path):
                 logger.error(f"Test video not found: {video_path}")
@@ -484,41 +647,132 @@ def main(test_mode=False):
                 if not os.path.exists(model["path"]):
                     logger.error(f"Model not found: {model['path']}")
                     continue
-                logger.info(f"Initializing NudeDetector with {model['label']}")
-                detector = NudeDetector(model_path=model["path"])
-                process_video(video_path, detector, conn, cursor, extractor, frame_skip=10, model_label=model["label"], max_frames=50)
+                logger.info(f"Processing test video with {model['label']}")
+                result = process_single_video(
+                    video_file=video_file,
+                    video_dir=video_dir,
+                    detector_model_path=model["path"],
+                    extractor_params=extractor_params,
+                    video_extensions=video_extensions,
+                    frame_skip=10,
+                    model_label=model["label"],
+                    max_frames=50
+                )
+                logger.info(f"Test result for {result[0]} with {model['label']}: {'Success' if result[1] else 'Failed'}")
         else:
-            # Normal mode: Process all videos with 640m.onnx
-            detector = NudeDetector(model_path=r"C:\Users\Jimmy\Documents\GitHub\NudeNet\nudenet\640m.onnx")
-            logger.info("NudeDetector initialized with 640m.onnx")
-            for video_file in os.listdir(video_dir):
-                if video_file.lower().endswith(video_extensions):
-                    video_path = os.path.join(video_dir, video_file)
-                    extractor.video_name = video_file.rsplit('.', 1)[0]
-                    process_video(video_path, detector, conn, cursor, extractor, frame_skip=10)
+            # Normal mode: Process exactly 5 unprocessed videos
+            video_files = []
+            for f in os.listdir(video_dir):
+                if any(f.lower().endswith(ext) for ext in video_extensions):
+                    video_path = os.path.join(video_dir, f)
+                    if os.path.isfile(video_path):
+                        video_files.append(f)
+                    else:
+                        logger.warning(f"Skipping {f}: Not a file")
+                else:
+                    logger.debug(f"Skipping {f}: Invalid extension")
 
+            video_files = sorted(video_files)
+            logger.info(f"Found {len(video_files)} video files: {video_files}")
+
+            if not video_files:
+                logger.warning(f"No videos found in {video_dir}")
+                return
+
+            # Load processed videos
+            processed_file = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\processed_videos.txt"
+            processed_videos_file = set()
+            if os.path.exists(processed_file):
+                with open(processed_file, "r") as f:
+                    processed_videos_file = {line.strip() for line in f if line.strip()}
+                logger.info(f"Loaded {len(processed_videos_file)} processed videos from {processed_file}")
+
+            cursor.execute("SELECT video_name FROM video_processing WHERE processed = 1")
+            processed_videos_db = {f"{row[0]}" for row in cursor.fetchall()}
+            processed_videos = processed_videos_file | {v.rsplit('_640m', 1)[0] for v in processed_videos_db if v.endswith('_640m')}
+            logger.info(f"Total processed videos: {len(processed_videos)}")
+
+            # Filter unprocessed videos
+            unprocessed_videos = []
+            for f in video_files:
+                base_name = f.rsplit('.', 1)[0]
+                if base_name not in processed_videos:
+                    video_path = os.path.join(video_dir, f)
+                    try:
+                        with open(video_path, 'rb') as test_file:
+                            test_file.read(1)
+                        unprocessed_videos.append(f)
+                    except Exception as e:
+                        logger.error(f"Cannot read {f}: {e}")
+                        # Log error in database
+                        video_name_db = f"{base_name}_640m"
+                        cursor.execute("""
+                            INSERT INTO video_processing (video_name, processed, error_message)
+                            VALUES (%s, 0, %s)
+                            ON DUPLICATE KEY UPDATE error_message = %s, processed = 0
+                        """, (video_name_db, str(e), str(e)))
+                        conn.commit()
+                else:
+                    logger.info(f"Skipping {f}: Already processed")
+
+            # Prioritize BabysitterMassacre.avi
+            target_video = 'BabysitterMassacre.avi'
+            if target_video in unprocessed_videos:
+                unprocessed_videos.remove(target_video)
+                unprocessed_videos.insert(0, target_video)
+                logger.info(f"Prioritized {target_video} for processing")
+
+            video_files = unprocessed_videos[:5]
+            logger.info(f"Selected {len(video_files)} unprocessed videos for processing: {video_files}")
+
+            if not video_files:
+                logger.info("No unprocessed videos available within the limit of 5")
+                return
+
+            max_processes = min(5, multiprocessing.cpu_count())
+            logger.info(f"Processing videos with {max_processes} concurrent processes")
+            with multiprocessing.Pool(processes=max_processes) as pool:
+                process_func = partial(
+                    process_single_video,
+                    video_dir=video_dir,
+                    detector_model_path=detector_model_path,
+                    extractor_params=extractor_params,
+                    video_extensions=video_extensions,
+                    frame_skip=20,
+                    min_score=0.5,
+                    model_label="640m"
+                )
+                results = pool.map(process_func, video_files)
+
+            for video_name, success in results:
+                logger.info(f"Processing {'succeeded' if success else 'failed'} for {video_name}")
+
+    except KeyboardInterrupt:
+        logger.warning("Script interrupted by user, cleaning up...")
+        raise
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Main process error: {e}")
         raise
     finally:
-        # Clean up all temporary frames
-        temp_dir = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\Screenshots"
+        temp_dir = extractor_params['output_dir']
         try:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
-                logger.info(f"Deleted all temporary frames in {temp_dir}")
+                logger.info(f"Deleted main temporary directory {temp_dir}")
             os.makedirs(temp_dir, exist_ok=True)
             if os.path.exists(temp_dir) and not os.listdir(temp_dir):
                 logger.info(f"Verified: {temp_dir} is empty")
             else:
                 logger.warning(f"Cleanup incomplete: {temp_dir} contains files")
         except Exception as e:
-            logger.error(f"Failed to delete temporary frames in {temp_dir}: {e}")
+            logger.error(f"Failed to clean up {temp_dir}: {e}")
 
         if 'conn' in locals() and conn.is_connected():
             cursor.close()
             conn.close()
-            logger.info("Database connection closed")
+            logger.info("Main database connection closed")
 
 if __name__ == "__main__":
+    # Ensure multiprocessing works correctly on Windows
+    multiprocessing.freeze_support()
     main(test_mode=False)  # Set to False for normal mode
