@@ -21,7 +21,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(r"C:\Users\Jimmy\PycharmProjects\NudeNetClassifier\processing_log.txt"),
+        logging.FileHandler(r"C:\Users\Jimmy\Documents\GitHub\NudeNet\processing_log.txt"),
         logging.StreamHandler()
     ]
 )
@@ -50,7 +50,7 @@ COLOR_MAP = {
 }
 
 # Output directory for visualized frames
-output_dir = r"C:\Users\Jimmy\PycharmProjects\NudeNetClassifier\detected_frames"
+output_dir = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\detected_frames"
 os.makedirs(output_dir, exist_ok=True)
 
 class ScreenshotExtractor:
@@ -409,7 +409,7 @@ def main(test_mode=False):
         # Initialize ScreenshotExtractor
         extractor = ScreenshotExtractor(
             video_dir=r"C:\Users\Jimmy\Documents\TestFolder",
-            output_dir=r"C:\Users\Jimmy\PycharmProjects\NudeNetClassifier\Screenshots",
+            output_dir=r"C:\Users\Jimmy\Documents\GitHub\NudeNet\Screenshots",
             properties_file=r"C:\Users\Jimmy\Documents\Integration.Properties",
             video_name="placeholder",
             crop_to_box=False,
@@ -502,7 +502,7 @@ def main(test_mode=False):
         raise
     finally:
         # Clean up all temporary frames
-        temp_dir = r"C:\Users\Jimmy\PycharmProjects\NudeNetClassifier\Screenshots"
+        temp_dir = r"C:\Users\Jimmy\Documents\GitHub\NudeNet\Screenshots"
         try:
             if os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir)
