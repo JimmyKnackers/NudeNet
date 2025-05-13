@@ -104,3 +104,4 @@ venv.bak/
 # mypy
 .mypy_cache/
 /detected_frames
+processing_log.txt
