@@ -19,7 +19,7 @@ __labels = [
     "BUTTOCKS_COVERED",
 ]
 
-def _read_image(image_path, target_size=640):  # Changed to 640
+def _read_image(image_path, target_size=640):
     logger.info(f"Reading image: {image_path}")
     if isinstance(image_path, str):
         mat = cv2.imread(image_path)
@@ -111,8 +111,8 @@ def _postprocess(
     return detections
 
 class NudeDetector:
-    def __init__(self, model_path=None, providers=None, inference_resolution=640):  # Changed to 640
-        default_model_path = os.path.join(os.path.dirname(__file__), "640m.onnx")  # Changed to 640m.onnx
+    def __init__(self, model_path=None, providers=None, inference_resolution=640):
+        default_model_path = os.path.join(os.path.dirname(__file__), "640m.onnx")
         model_path = model_path or default_model_path
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
