@@ -7,6 +7,9 @@ import mysql.connector
 import json
 import re
 import time
+import multiprocessing
+import psutil
+import os
 from datetime import datetime
 from pathlib import Path
 import shutil
@@ -559,8 +562,21 @@ def process_single_video(video_file, video_dir, detector_model_path, extractor_p
 
     return video_name, True
 
+import multiprocessing
+import psutil
+import os
+from functools import partial
+import mysql.connector
+import shutil
+import logging
+
 def main(test_mode=False):
     try:
+        # Set lower process priority to reduce system impact
+        p = psutil.Process()
+        p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)  # Windows: Lower priority
+        logger.info("Set process priority to below normal")
+
         # Initialize ScreenshotExtractor parameters
         extractor_params = {
             'video_dir': r"E:\Prol",
@@ -662,21 +678,21 @@ def main(test_mode=False):
         else:
             # Normal mode: Process exactly 5 unprocessed videos
             video_files = []
-            for f in os.listdir(video_dir):
-                if any(f.lower().endswith(ext) for ext in video_extensions):
-                    video_path = os.path.join(video_dir, f)
-                    if os.path.isfile(video_path):
-                        video_files.append(f)
+            for root, _, files in os.walk(video_dir):
+                for f in files:
+                    if any(f.lower().endswith(ext) for ext in video_extensions):
+                        video_path = os.path.join(root, f)
+                        # Store relative path to handle subfolders
+                        relative_path = os.path.relpath(video_path, video_dir)
+                        video_files.append(relative_path)
                     else:
-                        logger.warning(f"Skipping {f}: Not a file")
-                else:
-                    logger.debug(f"Skipping {f}: Invalid extension")
+                        logger.debug(f"Skipping {f} in {root}: Invalid extension")
 
             video_files = sorted(video_files)
             logger.info(f"Found {len(video_files)} video files: {video_files}")
 
             if not video_files:
-                logger.warning(f"No videos found in {video_dir}")
+                logger.warning(f"No videos found in {video_dir} or its subfolders")
                 return
 
             # Load processed videos
@@ -689,13 +705,17 @@ def main(test_mode=False):
 
             cursor.execute("SELECT video_name FROM video_processing WHERE processed = 1")
             processed_videos_db = {f"{row[0]}" for row in cursor.fetchall()}
-            processed_videos = processed_videos_file | {v.rsplit('_640m', 1)[0] for v in processed_videos_db if v.endswith('_640m')}
+            # Strip '_640m' and convert to relative path format
+            processed_videos = processed_videos_file | {
+                os.path.splitext(v.rsplit('_640m', 1)[0])[0].replace(os.sep, '/')
+                for v in processed_videos_db if v.endswith('_640m')
+            }
             logger.info(f"Total processed videos: {len(processed_videos)}")
 
             # Filter unprocessed videos
             unprocessed_videos = []
             for f in video_files:
-                base_name = f.rsplit('.', 1)[0]
+                base_name = os.path.splitext(f)[0].replace(os.sep, '/')
                 if base_name not in processed_videos:
                     video_path = os.path.join(video_dir, f)
                     try:
@@ -704,8 +724,7 @@ def main(test_mode=False):
                         unprocessed_videos.append(f)
                     except Exception as e:
                         logger.error(f"Cannot read {f}: {e}")
-                        # Log error in database
-                        video_name_db = f"{base_name}_640m"
+                        video_name_db = f"{base_name}_640m".replace('/', '_')
                         cursor.execute("""
                             INSERT INTO video_processing (video_name, processed, error_message)
                             VALUES (%s, 0, %s)
@@ -721,6 +740,14 @@ def main(test_mode=False):
                 unprocessed_videos.remove(target_video)
                 unprocessed_videos.insert(0, target_video)
                 logger.info(f"Prioritized {target_video} for processing")
+            else:
+                # Check subfolders for BabysitterMassacre.avi
+                for f in unprocessed_videos:
+                    if os.path.basename(f) == target_video:
+                        unprocessed_videos.remove(f)
+                        unprocessed_videos.insert(0, f)
+                        logger.info(f"Prioritized {f} for processing")
+                        break
 
             video_files = unprocessed_videos[:5]
             logger.info(f"Selected {len(video_files)} unprocessed videos for processing: {video_files}")
@@ -729,7 +756,7 @@ def main(test_mode=False):
                 logger.info("No unprocessed videos available within the limit of 5")
                 return
 
-            max_processes = min(5, multiprocessing.cpu_count())
+            max_processes = 3  # Optimized for 24-core Ultra 9 285K
             logger.info(f"Processing videos with {max_processes} concurrent processes")
             with multiprocessing.Pool(processes=max_processes) as pool:
                 process_func = partial(
@@ -738,7 +765,7 @@ def main(test_mode=False):
                     detector_model_path=detector_model_path,
                     extractor_params=extractor_params,
                     video_extensions=video_extensions,
-                    frame_skip=20,
+                    frame_skip=30,
                     min_score=0.5,
                     model_label="640m"
                 )
