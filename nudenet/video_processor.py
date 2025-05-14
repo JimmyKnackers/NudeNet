@@ -780,7 +780,7 @@ def main(test_mode=False):
                 logger.info("No unprocessed videos available within the limit of 5")
                 return
 
-            max_processes = 3
+            max_processes = 5
             logger.info(f"Processing videos with {max_processes} concurrent processes")
             with multiprocessing.Pool(processes=max_processes) as pool:
                 process_func = partial(
