@@ -571,7 +571,7 @@ def main(test_mode=False):
         logger.info("Set process priority to below normal")
 
         extractor_params = {
-            'video_dir': r"E:\Prol",
+            'video_dir': r"C:\Users\Jimmy\Documents\TestFolder",
             'output_dir': r"C:\Users\Jimmy\Documents\GitHub\NudeNet\Screenshots",
             'properties_file': r"C:\Users\Jimmy\Documents\Integration.Properties",
             'crop_to_box': False,
